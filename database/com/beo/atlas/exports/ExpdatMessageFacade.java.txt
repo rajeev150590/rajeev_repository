@@ -1,0 +1,435 @@
+/*
+ * Copyright 2017 - Till Date BEO Softwares GmbH. All Rights Reserved.
+ */
+package com.beo.atlas.database.exports.session.extdat;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+import javax.ejb.EJBException;
+import javax.ejb.Stateless;
+import javax.ejb.TransactionAttribute;
+import javax.ejb.TransactionAttributeType;
+import javax.persistence.NoResultException;
+import javax.persistence.PersistenceException;
+import javax.persistence.Query;
+import javax.persistence.TypedQuery;
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.criteria.CriteriaQuery;
+import javax.persistence.criteria.Predicate;
+import javax.persistence.criteria.Root;
+
+import com.beo.atlas.database.common.AbstractFacade;
+import com.beo.atlas.database.exports.entity.extdat.ExportsExtdatHeader;
+import com.beo.atlas.database.exports.entity.extdat.ExportsExtdatHeaderPK;
+import com.beo.atlas.database.exports.entity.extdat.ExportsExtdatHeaderPK_;
+import com.beo.atlas.database.exports.entity.extdat.ExportsExtdatHeader_;
+import com.beo.atlas.rio.common.dto.DatabaseListingCommonDTO;
+import com.beo.atlas.rio.exports.dto.messages.extdat.ExportsExtDatDBListDTO;
+import com.beo.atlas.rio.exports.dto.messages.extdat.ExportsExtdatMessageDTO;
+import com.beo.atlas.rio.exports.session.remote.extdat.ExportsExtDatFacadeRemote;
+import com.beo.atlas.util.logger.AtlasLogManager;
+import com.beo.atlas.util.utility.DateUtils;
+import com.beo.atlas.util.utility.StringUtils;
+
+/**
+ * Session bean for EXPORTS EXTDAT related functions
+ *
+ * @author nidheesh.krishna@beo.in
+ * @version 1.0
+ * @since Nov 13, 2017
+ */
+@Stateless
+public class ExportsExtDatFacade extends AbstractFacade<ExportsExtdatHeader> implements ExportsExtDatFacadeRemote
+{
+	private static final AtlasLogManager LOGMANAGER = new AtlasLogManager(ExportsExtDatFacade.class);
+
+	// String constants
+	private static final String YYYY_M_MDD = "yyyyMMdd";
+	private static final String DD_MM_YY = "dd.MM.yy";
+	private static final String YY_M_MDD = "yyMMdd";
+	private static final String N_LITERAL = "N";
+	private static final String DISPLAY = "display";
+	private static final String MRN = "mrn";
+	private static final String VORBEREITUNGDATUM = "vorbereitungDatum";
+	private static final String EMPTY_STRING = "";
+	private static final String USERID = "userid";
+	private static final String NACHRICH = "nachrich";
+	private static final String LIKE_OPERATOR = "%";
+	private static final String DD_MM_YYYY = "dd.MM.yyyy";
+	private static final String DATUM = "datum";
+	private static final String EXPORTS_EXTDAT_HEADER_UPDATE_DISPLAY_STATUS = "ExportsExtdatHeader.updateDisplayStatus";
+	private static final String FIND_NACHRICH_NUMMER_BY_USERID_MRN =
+			"ExportsExtdatHeader.findNachrichNummerByUseridAndMrn";
+
+	// Integer constants
+	private static final int COLUMN_INDEX_TWO = 2;
+	private static final int COLUMN_INDEX_ONE = 1;
+	private static final int COLUMN_INDEX_ZERO = 0;
+	private static final int SIX = 6;
+
+	private final transient ExportsExtdatFacadeHelper extdatFacadeHelper;
+
+	/**
+	 * Instantiates a new ExportsExtDatFacade.
+	 */
+	public ExportsExtDatFacade()
+	{
+		super(ExportsExtdatHeader.class);
+		extdatFacadeHelper = new ExportsExtdatFacadeHelper();
+	}
+
+	/**
+	 * Method used to find the EXPORTS EXTDAT database list and count for db list display
+	 *
+	 * @param first the first for pagination
+	 * @param pageSize the page size for pagination
+	 * @param filters the filters to apply
+	 * @param userName the user name
+	 * @return the DatabaseListingCommonDTO instance
+	 */
+	@Override
+	public DatabaseListingCommonDTO<ExportsExtDatDBListDTO> getExportsExtDatDatabaseListAndCount(final int first,
+			final int pageSize, final Map<String, Object> filters, final String userName)
+	{
+		final DatabaseListingCommonDTO<ExportsExtDatDBListDTO> databaseListingCommonDTO =
+				new DatabaseListingCommonDTO<>();
+		final List<ExportsExtDatDBListDTO> extdatDBListDTOs = new ArrayList<>();
+		List<Object[]> objectsList = null;
+		int count = 0;
+		if (null == filters || filters.isEmpty())
+		{
+			objectsList = getExtDatDatabaseList(first, pageSize, userName);
+			count = getCountForDatabaseListing(userName);
+		}
+		else
+		{
+			objectsList = getObjectList(first, pageSize, userName, filters, true);
+			count = getObjectList(first, pageSize, userName, filters, false).size();
+		}
+
+		if (null != objectsList && !objectsList.isEmpty())
+		{
+			for (final Object[] object : objectsList)
+			{
+				final ExportsExtDatDBListDTO dto = new ExportsExtDatDBListDTO();
+				dto.setNachrich(StringUtils.getArrayValue(object, COLUMN_INDEX_ZERO));
+				dto.setMrn(StringUtils.getArrayValue(object, COLUMN_INDEX_ONE));
+				if (StringUtils.getArrayValue(object, COLUMN_INDEX_TWO).length() > SIX)
+				{
+					dto.setDatum(DateUtils.getFormattedDate(StringUtils.getArrayValue(object, COLUMN_INDEX_TWO),
+							YYYY_M_MDD, DD_MM_YY));
+				}
+				else
+				{
+					dto.setDatum(DateUtils.getFormattedDate(StringUtils.getArrayValue(object, COLUMN_INDEX_TWO),
+							YY_M_MDD, DD_MM_YY));
+				}
+				extdatDBListDTOs.add(dto);
+			}
+		}
+		databaseListingCommonDTO.setDatabaseDTOList(extdatDBListDTOs);
+		databaseListingCommonDTO.setCount(count);
+		return databaseListingCommonDTO;
+	}
+
+	/**
+	 * Gets the count for database listing if not filters to apply.
+	 *
+	 * @param userName the user name
+	 * @return the count
+	 */
+	private int getCountForDatabaseListing(final String userName)
+	{
+		try
+		{
+			final Query query = entityManager.createNamedQuery("ExportsExtdatHeader.findCountForDatabaseListing");
+			query.setParameter(USERID, userName);
+			return Integer.parseInt(query.getSingleResult().toString());
+		}
+		catch (ArrayIndexOutOfBoundsException | NoResultException e)
+		{
+			LOGMANAGER.error("From 'getCountForDatabaseListing' ", e);
+		}
+		return 0;
+	}
+
+	/**
+	 * Gets the EXT DAT database list if no filters to apply.
+	 *
+	 * @param first the first for pagination
+	 * @param pageSize the page size for apgination
+	 * @param userName the user name
+	 * @return the EXT DAT database list
+	 */
+	private List<Object[]> getExtDatDatabaseList(final int first, final int pageSize, final String userName)
+	{
+		List<Object[]> messageList = null;
+		try
+		{
+			final TypedQuery<Object[]> query =
+					entityManager.createNamedQuery("ExportsExtdatHeader.findDataBaseList", Object[].class);
+			query.setParameter(USERID, userName);
+			query.setFirstResult(first);
+			query.setMaxResults(pageSize);
+			messageList = query.getResultList();
+		}
+		catch (ArrayIndexOutOfBoundsException | NoResultException e)
+		{
+			LOGMANAGER.error("From 'getExtDatDatabaseList' ", e);
+		}
+		return messageList;
+	}
+
+	/**
+	 * Method to get the Database list query result as Object List for DB Listing.
+	 *
+	 * @param first for pagination
+	 * @param pageSize for pagination
+	 * @param userName the user name
+	 * @param applyPagination to apply pagination in query
+	 * @param filters to apply
+	 * @return the object list
+	 */
+	private List<Object[]> getObjectList(final int first, final int pageSize, final String userName, final Map<String, Object> filters,
+			final boolean applyPagination)
+	{
+		List<Object[]> objectsList = new ArrayList<>();
+		final CriteriaBuilder criteriaBuilder = entityManager.getCriteriaBuilder();
+		final CriteriaQuery<Object[]> criteriaQuery = getCriteriaQueryForDBlisting(criteriaBuilder, userName, filters);
+		final TypedQuery<Object[]> typedQuery = entityManager.createQuery(criteriaQuery);
+		if (typedQuery != null)
+		{
+			if (applyPagination)
+			{
+				typedQuery.setFirstResult(first);
+				typedQuery.setMaxResults(pageSize);
+			}
+			objectsList = typedQuery.getResultList();
+		}
+		return objectsList;
+	}
+
+	/**
+	 * Gets the criteria query for database listing.
+	 *
+	 * @param criteriaBuilder the criteria builder
+	 * @param userName the user name
+	 * @param filters the filters to apply
+	 * @return the criteria query for database listing
+	 */
+	private CriteriaQuery<Object[]> getCriteriaQueryForDBlisting(final CriteriaBuilder criteriaBuilder, final String userName,
+			final Map<String, Object> filters)
+	{
+		final CriteriaQuery<Object[]> criteriaQuery = criteriaBuilder.createQuery(Object[].class);
+		final Root<ExportsExtdatHeader> extdatRoot = criteriaQuery.from(ExportsExtdatHeader.class);
+		criteriaQuery.multiselect(
+				extdatRoot.get(ExportsExtdatHeader_.exportsExtDatHeaderPK).get(ExportsExtdatHeaderPK_.nachrich),
+				extdatRoot.get(MRN), extdatRoot.get(VORBEREITUNGDATUM));
+		criteriaQuery.where(
+				getPredicateListFilter(criteriaBuilder, extdatRoot, filters, userName).toArray(new Predicate[0]));
+		criteriaQuery.orderBy(criteriaBuilder
+				.desc(extdatRoot.get(ExportsExtdatHeader_.exportsExtDatHeaderPK).get(ExportsExtdatHeaderPK_.nachrich)));
+		return criteriaQuery;
+	}
+
+	/**
+	 * To find details of all Predicate details, to search data from integrated tables to implement search functionality
+	 * on Table Headers
+	 * 
+	 * @modifiedBy riyas.tp
+	 * @modifiedDate Sep 21, 2020
+	 * @param criteriaBuilder the CriteriaBuilder instance
+	 * @param extdatRoot the Root instance for ExportsExtdatHeader
+	 * @param filters the filters to apply
+	 * @param userName the user name
+	 * @return the List of predicates
+	 */
+	private List<Predicate> getPredicateListFilter(final CriteriaBuilder criteriaBuilder,
+			final Root<ExportsExtdatHeader> extdatRoot, final Map<String, Object> filters, final String userName)
+	{
+		final List<Predicate> predicates = getPredicateListCommon(criteriaBuilder, extdatRoot, userName);
+		if (filters.get(NACHRICH) != null)
+		{
+			predicates.add(criteriaBuilder.like(
+					extdatRoot.get(ExportsExtdatHeader_.exportsExtDatHeaderPK).get(ExportsExtdatHeaderPK_.nachrich),
+					LIKE_OPERATOR + StringUtils.getTrimValueAfterNullCheck(filters.get(NACHRICH)) + LIKE_OPERATOR));
+		}
+		if (filters.get(DATUM) != null)
+		{
+			predicates.add(criteriaBuilder.like(extdatRoot.get(VORBEREITUNGDATUM),
+					DateUtils.getFormattedDate(StringUtils.getTrimValueAfterNullCheck(filters.get(DATUM)), DD_MM_YYYY,
+							YY_M_MDD) + LIKE_OPERATOR));
+		}
+		if (filters.get(MRN) != null)
+		{
+			predicates.add(criteriaBuilder.like(extdatRoot.get(MRN),
+					LIKE_OPERATOR + StringUtils.getTrimValueAfterNullCheck(filters.get(MRN)) + LIKE_OPERATOR));
+		}
+		return predicates;
+	}
+
+	/**
+	 * To find details of common Predicate details, to load data from tables
+	 *
+	 * @param criteriaBuilder the CriteriaBuilder instance
+	 * @param extdatRoot the Root instance for ExportsExtdatHeader
+	 * @param userName the user name
+	 * @return the List of predicates
+	 */
+	private List<Predicate> getPredicateListCommon(final CriteriaBuilder criteriaBuilder,
+			final Root<ExportsExtdatHeader> extdatRoot, final String userName)
+	{
+		final List<Predicate> predicates = new ArrayList<>();
+		predicates.add(criteriaBuilder.equal(
+				extdatRoot.get(ExportsExtdatHeader_.exportsExtDatHeaderPK).get(ExportsExtdatHeaderPK_.userid),
+				userName));
+		predicates.add(criteriaBuilder.notEqual(extdatRoot.get(DISPLAY), N_LITERAL));
+		return predicates;
+	}
+
+	/**
+	 * Method used to delete selected extdat rows from database using nachrich and username.
+	 *
+	 * @param selectionList the selection list
+	 * @param userName the user name
+	 * @return true, if successful
+	 */
+	@Override
+	public boolean deleteSelectedFromDatabaseList(final List<ExportsExtDatDBListDTO> selectionList, final String userName)
+	{
+		if (selectionList != null && !selectionList.isEmpty())
+		{
+			for (final ExportsExtDatDBListDTO dbListDTO : selectionList)
+			{
+				if (!EMPTY_STRING.equals(StringUtils.getValueAfterNullCheck(userName))
+						&& !EMPTY_STRING.equals(StringUtils.getValueAfterNullCheck(dbListDTO.getNachrich())))
+				{
+					updateExtDatHeaderTableDisplayStatus(userName, dbListDTO.getNachrich());
+				}
+			}
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Update EXTDAT header table display status.
+	 *
+	 * @param userName the user name
+	 * @param nachrich the nachrich number
+	 * @return true, if successful
+	 */
+	private boolean updateExtDatHeaderTableDisplayStatus(final String userName, final String nachrich)
+	{
+		try
+		{
+			final Query query = entityManager.createNamedQuery(EXPORTS_EXTDAT_HEADER_UPDATE_DISPLAY_STATUS);
+			query.setParameter(USERID, userName);
+			query.setParameter(NACHRICH, nachrich);
+			if (query.executeUpdate() > 0)
+			{
+				return true;
+			}
+		}
+		catch (EJBException | PersistenceException exception)
+		{
+			LOGMANAGER.error("Exception from ExportsExtDatFacade.java in updateExtDatHeaderTableDisplayStatus():",
+					exception);
+		}
+		return false;
+	}
+
+	/**
+	 * Method used to delete EXTDAT entry from db based on given userid and nachrich.
+	 *
+	 * @author nidheesh.krishna
+	 * @modifiedBy laya.venugopal
+	 * @modifiedDate Jan 06, 2021
+	 * 
+	 * @param userName the user name
+	 * @param nachrichNumber the nachrich number
+	 * @return true, if successful
+	 */
+	@Override
+	public boolean deleteExtDatEntryFromList(final String userName, final String nachrichNumber)
+	{
+		return StringUtils.isNotNullOrEmpty(userName) && StringUtils.isNotNullOrEmpty(nachrichNumber)
+				&& this.updateExtDatHeaderTableDisplayStatus(userName, nachrichNumber);
+	}
+
+	/**
+	 * Find exports extdat dto for given nachrich and userid.
+	 *
+	 * @param userId String
+	 * @param nachrichNumber String
+	 * @return the exports extdat message DTO
+	 */
+	@Override
+	public ExportsExtdatMessageDTO findExportsExtdatDto(final String userId, final String nachrichNumber)
+	{
+		final ExportsExtdatHeaderPK extdatPK = new ExportsExtdatHeaderPK(userId, nachrichNumber);
+		final ExportsExtdatHeader entity = abstractFind(extdatPK);
+		final ExportsExtdatMessageDTO exportsExtdatMessageDTO = new ExportsExtdatMessageDTO();
+		exportsExtdatMessageDTO.setUserId(userId);
+		if (null != entity)
+		{
+			extdatFacadeHelper.setExtdatMessgaeDTO(entity, exportsExtdatMessageDTO);
+		}
+		return exportsExtdatMessageDTO;
+	}
+
+	/**
+	 * Method used to save newly fetched extdat details in db. also return receive message dto after adding fields
+	 * description based on value .Returned receive message dto used to generate info mail Pdf
+	 *
+	 * @author nidheesh.krishna@beo.in
+	 * @modifiedBy laya.venugopal
+	 * @modifiedDate Feb 17,2021
+	 * 
+	 * @param extDatMessageDto the ext dat message dto
+	 * @return the exports extdat message DTO
+	 */
+	@Override
+	@TransactionAttribute (TransactionAttributeType.REQUIRED)
+	public ExportsExtdatMessageDTO saveExportsExtDatDetails(final ExportsExtdatMessageDTO extDatMessageDto)
+	{
+		ExportsExtdatMessageDTO messageDtowithDesc = null;
+		if (Objects.nonNull(extDatMessageDto))
+		{
+			final ExportsExtdatHeader headerEntity = this.extdatFacadeHelper.saveExportsExtDatDetails(extDatMessageDto);
+			super.abstractCreateEntity(headerEntity);
+			messageDtowithDesc = new ExportsExtdatMessageDTO();
+			messageDtowithDesc.setUserId(extDatMessageDto.getUserId());
+			extdatFacadeHelper.setExtdatMessgaeDTO(headerEntity, messageDtowithDesc);
+		}
+		return messageDtowithDesc;
+	}
+
+	/**
+	 * Method to find nachrich for existence of the exports extdat message details against user_id and mrn. This result
+	 * is used for checking one of the validation in EXTNOT sending message .
+	 *
+	 * @param userid the userid
+	 * @param mrn the mrn
+	 * @return the nachrich nummer
+	 */
+	@Override
+	public String getExtDatMessageByUserIdAndMrn(final String userid, final String mrn)
+	{
+		try
+		{
+			final Query query = this.entityManager.createNamedQuery(FIND_NACHRICH_NUMMER_BY_USERID_MRN);
+			query.setParameter(USERID, userid);
+			query.setParameter(MRN, mrn);
+			return StringUtils.getValueAfterNullCheck(query.setMaxResults(1).getSingleResult());
+		}
+		catch (EJBException | PersistenceException exception)
+		{
+			LOGMANAGER.error("Exception from getExtDatMessageByUserIdAndMrn():", exception);
+		}
+		return EMPTY_STRING;
+	}
+}

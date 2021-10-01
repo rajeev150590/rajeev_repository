@@ -1,0 +1,469 @@
+/*
+ * CopyrightÂ 2017 - Till DateÂ BEO Softwares GmbH.Â Â AllÂ RightsÂ Reserved.
+ */
+package com.beo.atlas.businessrules.exports.messages.expdat;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+
+import com.beo.atlas.businessrules.common.CommonBusinessRule;
+import com.beo.atlas.businessrules.exports.messages.ExportsRuleConstants;
+import com.beo.atlas.businessrules.exports.messages.expdat.staticrules.ExportsExpDatPositionRules;
+import com.beo.atlas.rio.exports.dto.messages.expdat.ExportsExpdatMessageDTO;
+import com.beo.atlas.rio.exports.dto.messages.expdat.position.ExportsExpdatBeendigungAvuvPositionTabDTO;
+import com.beo.atlas.rio.exports.dto.messages.expdat.position.ExportsExpdatBeendigungZlPositionTabDTO;
+import com.beo.atlas.rio.exports.dto.messages.expdat.position.ExportsExpdatContainerPositionTabDTO;
+import com.beo.atlas.rio.exports.dto.messages.expdat.position.ExportsExpdatPackstuckPositionTabDTO;
+import com.beo.atlas.rio.exports.dto.messages.expdat.position.ExportsExpdatPositionDTO;
+import com.beo.atlas.rio.exports.dto.messages.expdat.position.ExportsExpdatUnterlagePositionTabDTO;
+import com.beo.atlas.rio.exports.dto.messages.expdat.position.ExportsExpdatVorpapierPositionTabDTO;
+import com.beo.atlas.util.utility.StringUtils;
+
+/**
+ * This class is the message specific rule checker of expdat Message Message specific rule checker checks the rules and
+ * adds the validations in to error details List
+ * 
+ * @author akhil.babu
+ * @version 1.0
+ * @since 23-Jan-2018
+ */
+public class ExportsExpdatMessageRuleChecker extends CommonBusinessRule
+{
+	private final transient ExportsExpdatMessageDTO exportsMessageDto;
+	private final transient boolean enableHeaderChecking;
+	private final transient boolean enablePositionChecking;
+
+	/**
+	 * <p>
+	 * Method to Instantiates a new exports EXP_DAT message rule checker.
+	 * </p>
+	 * 
+	 * @author akhil.babu
+	 * @modifiedBy amalchand
+	 * @modifiedDate Aug 03,2020
+	 * @param exportsMessageDto the message DTO containing all EXP_DAT message details.
+	 * @param enableHeaderChecking the flag which determines whether header validation is needed or not
+	 * @param enablePositionChecking the flag which determines whether position validation is needed or not
+	 */
+	public ExportsExpdatMessageRuleChecker(final ExportsExpdatMessageDTO exportsMessageDto,
+			final boolean enableHeaderChecking, final boolean enablePositionChecking)
+	{
+		super();
+		this.exportsMessageDto = exportsMessageDto;
+		this.enableHeaderChecking = enableHeaderChecking;
+		this.enablePositionChecking = enablePositionChecking;
+		loadMessageTabNameMap();
+	}
+
+	/**
+	 * Method To check messages rules as per IHb . Add validation sin error details list in message sto to show to user.
+	 * <p>
+	 * enableHeaderChecking the flag which determines whether header validation is needed or not enablePositionChecking
+	 * the flag which determines whether position validation is needed or not
+	 * </p>
+	 * 
+	 * @author akhil.babu
+	 * @modifiedBy laya.venugopal
+	 * @modifiedDate Sep 02,2019
+	 */
+	public void checkMessagesRules()
+	{
+		if (Objects.nonNull(this.exportsMessageDto))
+		{
+			final boolean filterValidation = this.enableHeaderChecking && this.enablePositionChecking;
+			if (this.enableHeaderChecking)
+			{
+				final ExportsExpDatMessageHeaderRuleChecker expdatHeaderRuleChecker =
+						new ExportsExpDatMessageHeaderRuleChecker(this.exportsMessageDto, filterValidation);
+				expdatHeaderRuleChecker.checkHeaderMessageRules();
+			}
+			if (this.enablePositionChecking && Objects.nonNull(this.exportsMessageDto.getExportsExpdatPositionDto()))
+			{
+				final ExportsExpDatMessagePositionRuleChecker expdatPositionRuleChecker =
+						new ExportsExpDatMessagePositionRuleChecker(this.exportsMessageDto, filterValidation);
+				expdatPositionRuleChecker.checkPositionPart();
+				this.checkSinglePositionFieldsValidations(expdatPositionRuleChecker);
+			}
+		}
+	}
+
+	/**
+	 * Check single position fields validations.
+	 * <p>
+	 * Method to check single position fields validation.
+	 *
+	 * It is permitted to show this validation when all positions are having same values and if there is only one
+	 * position and it contains value.
+	 * 
+	 * The validations states those values has to be given in header side .
+	 * </p>
+	 * 
+	 * @author akhil.babu
+	 * @modifiedBy rizwan.cs
+	 * @modifiedDate Jan 07,2020
+	 * 
+	 * @param expdatPositionRuleChecker the expdat position rule checker
+	 */
+	private void checkSinglePositionFieldsValidations(
+			final ExportsExpDatMessagePositionRuleChecker expdatPositionRuleChecker)
+	{
+		if (this.enableHeaderChecking)
+		{
+			final Map<String, Set<String>> repeatedFieldsMap = expdatPositionRuleChecker.getRepeatedFieldsMap();
+			repeatedFieldsMap.forEach((key, value) -> {
+				final String errorMsgKey = ExportsExpDatPositionRules.checkSinglePositionFieldsValidation(
+						this.exportsMessageDto.getExportsExpdatPositionDto().size(), key, value);
+				if (StringUtils.isNotNullOrEmpty(errorMsgKey))
+				{
+					this.exportsMessageDto.addErrorDetails(ExportsRuleConstants.COMMON_MESSAGE_FOR_ID, errorMsgKey,
+							ExportsRuleConstants.EMPTY_STRING, ExportsRuleConstants.LITERAL_ONE,
+							ExportsRuleConstants.EMPTY_STRING, ExportsRuleConstants.LITERAL_ZERO,
+							ExportsRuleConstants.EMPTY_STRING);
+				}
+			});
+		}
+	}
+
+	/**
+	 * Method to check <b>WARE / UNTERLAGE</b> individually while adding new or editing existing tab value by user in
+	 * view page .
+	 *
+	 * @author akhil.babu
+	 * @modifiedBy laya.venugopal
+	 * @modfifiedDate Nov 21,2018
+	 *
+	 * @param unterlageDTO the <b>WARE / UNTERLAGE</b> DTO
+	 * @param position the EXP DAT current position number
+	 */
+	public void checkUnterlageTab(final ExportsExpdatUnterlagePositionTabDTO unterlageDTO, final String position)
+	{
+		if (Objects.nonNull(this.exportsMessageDto) && Objects.nonNull(unterlageDTO)
+				&& Objects.nonNull(this.exportsMessageDto.getExportsExpdatHeaderDto())
+				&& Objects.nonNull(this.exportsMessageDto.getExportsExpdatPositionDto()))
+		{
+			final String artderAnmeldungVerfahren = StringUtils.getTrimValueAfterNullCheck(
+					this.exportsMessageDto.getExportsExpdatHeaderDto().getArtderAnmeldungVerfahren());
+			final String artderAnmeldungAusfuhr = StringUtils.getTrimValueAfterNullCheck(
+					this.exportsMessageDto.getExportsExpdatHeaderDto().getArtderAnmeldungAusfuhr());
+			final ExportsExpdatPositionDTO expdatPositionDTo = getCurrentPositionDTO(position);
+			final List<ExportsExpdatUnterlagePositionTabDTO> unterlageTablist =
+					expdatPositionDTo.getUnterlagePositionTabDto();
+
+			if (!unterlageDTO.isEditTabRow() && Objects.nonNull(unterlageTablist)
+					&& unterlageTablist.size() + ExportsRuleConstants.INTEGER_ONE > ExportsRuleConstants.INTEGER_99)
+			{
+				this.exportsMessageDto.addErrorDetails(ExportsExpDatMessageRuleConstants.UNTERLAGE_MESSAGES,
+						ExportsExpDatMessageRuleConstants.TAB_LENGTH_99_VALIDATION, ExportsRuleConstants.EMPTY_STRING,
+						ExportsRuleConstants.EMPTY_STRING, position, ExportsRuleConstants.EMPTY_STRING,
+						ExportsExpDatMessageRuleConstants.LITERAL_THREE);
+			}
+			else
+			{
+				final ExportsExpDatMessagePositionRuleChecker expdatPositionRuleChecker =
+						new ExportsExpDatMessagePositionRuleChecker(this.exportsMessageDto, false);
+				expdatPositionRuleChecker.checkUnterlageSingleTab(unterlageDTO, unterlageTablist, position,
+						artderAnmeldungVerfahren, artderAnmeldungAusfuhr);
+			}
+		}
+	}
+
+	/**
+	 * Method to check <b>PACKSTÃœCK</b> tab while adding new or editing existing tab value by user in view page
+	 *
+	 * @author akhil.babu@beo.in
+	 * @modifiedBy laya.venugopal
+	 * @modifiedDate Jan 20,2021
+	 * 
+	 * @param packstuckPositionTabDTO the <b>PACKSTÃœCK</b> tab DTO
+	 * @param position the current position number
+	 */
+	public void checkPackstuckTab(final ExportsExpdatPackstuckPositionTabDTO packstuckPositionTabDTO,
+			final String position)
+	{
+		if (Objects.nonNull(this.exportsMessageDto) && Objects.nonNull(packstuckPositionTabDTO)
+				&& Objects.nonNull(this.exportsMessageDto.getExportsExpdatHeaderDto()))
+		{
+			final ExportsExpdatPositionDTO expdatPositionDto = getCurrentPositionDTO(position);
+			final List<ExportsExpdatPackstuckPositionTabDTO> expdatPackStuckTabDTOList =
+					expdatPositionDto.getPackstuckPositionTabDto();
+			if (!packstuckPositionTabDTO.isEditTabRow() && Objects.nonNull(expdatPackStuckTabDTOList)
+					&& expdatPackStuckTabDTOList.size()
+							+ ExportsRuleConstants.INTEGER_ONE > ExportsRuleConstants.INTEGER_99)
+			{
+				this.exportsMessageDto.addErrorDetails(ExportsExpDatMessageRuleConstants.PACKSTUCK_MESSAGES,
+						ExportsExpDatMessageRuleConstants.TAB_LENGTH_99_VALIDATION, ExportsRuleConstants.EMPTY_STRING,
+						ExportsRuleConstants.EMPTY_STRING, position, ExportsRuleConstants.EMPTY_STRING,
+						ExportsRuleConstants.LITERAL_ONE);
+			}
+			else
+			{
+				final ExportsExpDatMessagePositionRuleChecker expdatPositionRuleChecker =
+						new ExportsExpDatMessagePositionRuleChecker(this.exportsMessageDto, false);
+				final int kopfAnzahlPositionValue = StringUtils
+						.getIntegerValue(this.exportsMessageDto.getExportsExpdatHeaderDto().getAnzahlPositionen());
+				expdatPositionRuleChecker.checkPackstuckSingleTab(position, packstuckPositionTabDTO,
+						kopfAnzahlPositionValue,
+						StringUtils.getTrimValueAfterNullCheck(expdatPositionDto.getWareRohmasse()));
+			}
+		}
+	}
+
+	/**
+	 * Method to check <b>Container</b> tab while adding new or editing existing tab value by user in view page
+	 * 
+	 * @author akhil.babu@beo.in
+	 * @modifiedBy laya.venugopal
+	 * @modifiedDate Jan 20,2021
+	 * 
+	 * @param containerTabDto the <b>Container</b> tab DTO
+	 * @param position the current position number
+	 */
+	public void checkContainerTab(final ExportsExpdatContainerPositionTabDTO containerTabDto, final String position)
+	{
+		if (Objects.nonNull(this.exportsMessageDto) && Objects.nonNull(containerTabDto)
+				&& Objects.nonNull(this.exportsMessageDto.getExportsExpdatHeaderDto()))
+		{
+			final ExportsExpdatPositionDTO expdatPositionDto = getCurrentPositionDTO(position);
+			final List<ExportsExpdatContainerPositionTabDTO> containerDTOList =
+					expdatPositionDto.getContainerPositionTabDto();
+			if (!containerTabDto.isEditTabRow() && Objects.nonNull(containerDTOList)
+					&& containerDTOList.size() + ExportsRuleConstants.INTEGER_ONE > ExportsRuleConstants.INTEGER_99)
+			{
+				this.exportsMessageDto.addErrorDetails(ExportsExpDatMessageRuleConstants.CONTAINER_MESSAGES,
+						ExportsExpDatMessageRuleConstants.TAB_LENGTH_99_VALIDATION, ExportsRuleConstants.EMPTY_STRING,
+						ExportsRuleConstants.EMPTY_STRING, position, ExportsRuleConstants.EMPTY_STRING,
+						ExportsExpDatMessageRuleConstants.LITERAL_TWO);
+			}
+			else
+			{
+				final ExportsExpDatMessagePositionRuleChecker expdatPositionRuleChecker =
+						new ExportsExpDatMessagePositionRuleChecker(this.exportsMessageDto, false);
+				final String kopfContainerValue = StringUtils
+						.getTrimValueAfterNullCheck(exportsMessageDto.getExportsExpdatHeaderDto().getContainer());
+				expdatPositionRuleChecker.checkSingleContainerTab(position, containerTabDto, kopfContainerValue);
+			}
+		}
+	}
+
+	/**
+	 * Method used to get position dto based on position number from expdat position list for checking expdat position
+	 * related validations.
+	 *
+	 * @param position the position
+	 * @return the current position DTO
+	 */
+	private ExportsExpdatPositionDTO getCurrentPositionDTO(final String position)
+	{
+		final List<ExportsExpdatPositionDTO> listOfExpDatPositionDto =
+				this.exportsMessageDto.getExportsExpdatPositionDto();
+		final int positionIndex = StringUtils.getIntegerValue(position) - ExportsRuleConstants.INTEGER_ONE;
+		if (Objects.nonNull(listOfExpDatPositionDto) && !listOfExpDatPositionDto.isEmpty())
+		{
+			return listOfExpDatPositionDto.get(positionIndex);
+		}
+		return new ExportsExpdatPositionDTO();
+	}
+
+	/**
+	 * Method to check <b>Beendigung ZL</b> tab while adding new or editing existing tab value by user in view page
+	 *
+	 * @author rajeev.k@beo.in
+	 * @modifiedBy ashlin.jerson
+	 * @modifiedDate Aug 15,2021
+	 * 
+	 * @param beendigungzlPositionDto <b>Beendigung ZL</b> tab DTO
+	 * @param position the current position number
+	 */
+	public void checkBeendigungZlTab(final ExportsExpdatBeendigungZlPositionTabDTO beendigungzlPositionDto,
+			final String position)
+	{
+		if (Objects.nonNull(this.exportsMessageDto) && Objects.nonNull(beendigungzlPositionDto)
+				&& Objects.nonNull(this.exportsMessageDto.getExportsExpdatHeaderDto()))
+		{
+			final ExportsExpDatMessagePositionRuleChecker expdatPositionRuleChecker =
+					new ExportsExpDatMessagePositionRuleChecker(this.exportsMessageDto, false);
+			final ExportsExpdatPositionDTO expdatPositionDto = getCurrentPositionDTO(position);
+			final List<ExportsExpdatBeendigungZlPositionTabDTO> beendigungZlPositionTabDtoList =
+					expdatPositionDto.getBeendigungZlPositionTabDto();
+			if (Objects.nonNull(beendigungZlPositionTabDtoList))
+			{
+				int tabSize = beendigungZlPositionTabDtoList.size() + ExportsRuleConstants.INTEGER_ONE;
+				if (!beendigungzlPositionDto.isEditTabRow() && tabSize > ExportsExpDatMessageRuleConstants.INTEGER_999)
+				{
+					this.exportsMessageDto.addErrorDetails(ExportsExpDatMessageRuleConstants.BEENDIGUNG_ZL_MESSAGES,
+							ExportsExpDatMessageRuleConstants.POSITIONZL_POSITION_999_VALIDATION,
+							ExportsRuleConstants.EMPTY_STRING, ExportsRuleConstants.EMPTY_STRING, position,
+							ExportsRuleConstants.EMPTY_STRING, ExportsExpDatMessageRuleConstants.LITERAL_FOUR);
+				}
+				else
+				{
+					if (beendigungzlPositionDto.isEditTabRow())
+					{
+						tabSize = Integer.parseInt(
+								StringUtils.getTrimValueAfterNullCheck(beendigungzlPositionDto.getPositionZL()));
+					}
+					expdatPositionRuleChecker.checkBeendigungZLSingleTab(position, beendigungzlPositionDto, tabSize);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Method to check <b>Beendigung AV/UV</b> tab while adding new or editing existing tab value by user in view page
+	 * 
+	 * @author rajeev.k@beo.in
+	 * @modifiedBy ashlin.jerson
+	 * @modifiedDate Aug 15,2021
+	 * 
+	 * @param beendigungAvUvPositionDto <b>Beendigung AV/UV</b> tab DTO
+	 * @param position the current position number
+	 */
+	public void checkBeendigungAvuvTab(final ExportsExpdatBeendigungAvuvPositionTabDTO beendigungAvUvPositionDto,
+			final String position)
+	{
+		if (Objects.nonNull(this.exportsMessageDto) && Objects.nonNull(beendigungAvUvPositionDto)
+				&& Objects.nonNull(this.exportsMessageDto.getExportsExpdatHeaderDto()))
+		{
+			final ExportsExpDatMessagePositionRuleChecker expdatPositionRuleChecker =
+					new ExportsExpDatMessagePositionRuleChecker(this.exportsMessageDto, false);
+			final ExportsExpdatPositionDTO expdatPositionDto = getCurrentPositionDTO(position);
+			final String verfahrenVorangegangenes =
+					StringUtils.getTrimValueAfterNullCheck(expdatPositionDto.getVerfahrenVorangegangenes());
+			final List<ExportsExpdatBeendigungAvuvPositionTabDTO> beendigungAvUvPositionTabDtoList =
+					expdatPositionDto.getBeendigungavuvPositionTabDto();
+			if (Objects.nonNull(beendigungAvUvPositionTabDtoList))
+			{
+				int index = beendigungAvUvPositionTabDtoList.size() + ExportsRuleConstants.INTEGER_ONE;
+				if (!beendigungAvUvPositionDto.isEditTabRow() && index > ExportsExpDatMessageRuleConstants.INTEGER_999)
+				{
+					this.exportsMessageDto.addErrorDetails(ExportsExpDatMessageRuleConstants.BEENDIGUNG_AVUV_MESSAGES,
+							ExportsExpDatMessageRuleConstants.TAB_LENGTH_999_VALIDATION,
+							ExportsRuleConstants.EMPTY_STRING, ExportsRuleConstants.EMPTY_STRING, position,
+							ExportsRuleConstants.EMPTY_STRING, ExportsExpDatMessageRuleConstants.LITERAL_FIVE);
+				}
+				else
+				{
+					if (beendigungAvUvPositionDto.isEditTabRow())
+					{
+						index = Integer.parseInt(
+								StringUtils.getTrimValueAfterNullCheck(beendigungAvUvPositionDto.getPositionAvuv()));
+					}
+					expdatPositionRuleChecker.checkBeendigungAvUvSingleTab(position, beendigungAvUvPositionDto,
+							verfahrenVorangegangenes, index);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Method to check <b>Vorpapier</b> tab while adding new or editing existing tab value by user in view page
+	 * 
+	 * @author rajeev.k
+	 * @modifiedBy laya.venugopal
+	 * @modifiedDate Jan 20,2021
+	 * 
+	 * @param vorpapierDTO the vorpapier DTO
+	 * @param position the current position number
+	 */
+	public void checkVorpapierTab(final ExportsExpdatVorpapierPositionTabDTO vorpapierDTO, final String position)
+	{
+		if (Objects.nonNull(this.exportsMessageDto) && Objects.nonNull(vorpapierDTO)
+				&& Objects.nonNull(this.exportsMessageDto.getExportsExpdatHeaderDto()))
+		{
+			final ExportsExpDatMessagePositionRuleChecker expdatPositionRuleChecker =
+					new ExportsExpDatMessagePositionRuleChecker(this.exportsMessageDto, false);
+			final ExportsExpdatPositionDTO expdatPositionDto = getCurrentPositionDTO(position);
+			final List<ExportsExpdatVorpapierPositionTabDTO> vorpapierPositionTabDtoList =
+					expdatPositionDto.getVorpapierPositionTabDto();
+			if (!vorpapierDTO.isEditTabRow() && Objects.nonNull(vorpapierPositionTabDtoList)
+					&& vorpapierPositionTabDtoList.size()
+							+ ExportsRuleConstants.INTEGER_ONE > ExportsExpDatMessageRuleConstants.INTEGER_9)
+			{
+				this.exportsMessageDto.addErrorDetails(ExportsExpDatMessageRuleConstants.VORPAPIER_MESSAGES,
+						ExportsExpDatMessageRuleConstants.TAB_LENGTH_9_VALIDATION, ExportsRuleConstants.EMPTY_STRING,
+						ExportsRuleConstants.EMPTY_STRING, position, ExportsRuleConstants.EMPTY_STRING,
+						ExportsExpDatMessageRuleConstants.LITERAL_SIX);
+			}
+			else
+			{
+				checkVorpapierTabValidations(vorpapierDTO, position, expdatPositionRuleChecker,
+						vorpapierPositionTabDtoList);
+			}
+		}
+	}
+
+	/**
+	 * Method to Check vorpapier tab validations while adding new or editing existing tab value by user in view page
+	 * 
+	 * @author rajeev.k
+	 * @modifiedBy anila.shaju
+	 * @modifiedDate Mar 11, 2020
+	 * 
+	 * @param vorpapierDTO the vorpapier DTO
+	 * @param position the position
+	 * @param expdatPositionRuleChecker the expdat position rule checker
+	 * @param vorpapierPositionTabDtoList the vorpapier position tab dto list
+	 */
+	private void checkVorpapierTabValidations(final ExportsExpdatVorpapierPositionTabDTO vorpapierDTO,
+			final String position, final ExportsExpDatMessagePositionRuleChecker expdatPositionRuleChecker,
+			final List<ExportsExpdatVorpapierPositionTabDTO> vorpapierPositionTabDtoList)
+	{
+		expdatPositionRuleChecker.checkVorpapierSingleTab(vorpapierDTO, vorpapierPositionTabDtoList, position);
+		String errorMsgKey = ExportsRuleConstants.EMPTY_STRING;
+		if (Objects.nonNull(vorpapierPositionTabDtoList)
+				&& ExportsExpDatMessageRuleConstants.AAD_LITERAL.equals(vorpapierDTO.getVorpapierType()))
+		{
+			final Optional<ExportsExpdatVorpapierPositionTabDTO> optional = vorpapierPositionTabDtoList.stream()
+					.distinct().filter(vorpapier -> ExportsExpDatMessageRuleConstants.AAD_LITERAL
+							.equals(vorpapier.getVorpapierType()))
+					.findFirst();
+			if (!vorpapierDTO.isEditTabRow() && optional.isPresent())
+			{
+				errorMsgKey = ExportsExpDatMessageRuleConstants.VORPAPIER_TYP_AAD_ERROR;
+			}
+		}
+		if (!ExportsRuleConstants.EMPTY_STRING.equals(errorMsgKey))
+		{
+			this.exportsMessageDto.addErrorDetails(ExportsExpDatMessageRuleConstants.WARE_VORPAPIERTYP_ID, errorMsgKey,
+					ExportsRuleConstants.EMPTY_STRING, ExportsRuleConstants.EMPTY_STRING, position,
+					ExportsRuleConstants.EMPTY_STRING, ExportsExpDatMessageRuleConstants.LITERAL_SIX);
+		}
+	}
+
+	/**
+	 * To keep Header and Position tab names in map for displaying in rule validations Tab index as map key, tab name as
+	 * map value
+	 * 
+	 * @author amalchand.o@beo.in
+	 * @modifiedBy amalchand
+	 * @modifiedDate Aug 04,2020
+	 */
+	private void loadMessageTabNameMap()
+	{
+		if (Objects.nonNull(exportsMessageDto))
+		{
+			final Map<String, String> headerTabNamesMap = exportsMessageDto.getHeaderTabNames();
+			headerTabNamesMap.put(ExportsRuleConstants.LITERAL_ONE,
+					ExportsExpDatMessageRuleConstants.BESONDERER_TABNAME);
+			headerTabNamesMap.put(ExportsRuleConstants.LITERAL_TWO, ExportsExpDatMessageRuleConstants.ZEICHEN_TABNAME);
+			headerTabNamesMap.put(ExportsRuleConstants.LITERAL_THREE,
+					ExportsExpDatMessageRuleConstants.BEFORDERUNG_TABNAME);
+			headerTabNamesMap.put(ExportsRuleConstants.LITERAL_FOUR,
+					ExportsExpDatMessageRuleConstants.WIEDEREINFUHR_TABNAME);
+			headerTabNamesMap.put(ExportsRuleConstants.LITERAL_FIVE,
+					ExportsExpDatMessageRuleConstants.NAMLICHKEITSMITTEL_TABNAME);
+			headerTabNamesMap.put(ExportsRuleConstants.LITERAL_SIX,
+					ExportsExpDatMessageRuleConstants.ERZEUGNIS_TABNAME);
+			final Map<String, String> posTabNamesMap = exportsMessageDto.getPositionTabNames();
+			posTabNamesMap.put(ExportsRuleConstants.LITERAL_ONE, ExportsExpDatMessageRuleConstants.PACKSTUCK_TABNAME);
+			posTabNamesMap.put(ExportsRuleConstants.LITERAL_TWO, ExportsExpDatMessageRuleConstants.CONTAINER_TABNAME);
+			posTabNamesMap.put(ExportsRuleConstants.LITERAL_THREE, ExportsExpDatMessageRuleConstants.UNTERLAGE_TABNAME);
+			posTabNamesMap.put(ExportsRuleConstants.LITERAL_FOUR, ExportsExpDatMessageRuleConstants.ZL_TABNAME);
+			posTabNamesMap.put(ExportsRuleConstants.LITERAL_FIVE, ExportsExpDatMessageRuleConstants.AVUV_TABNAME);
+			posTabNamesMap.put(ExportsRuleConstants.LITERAL_SIX, ExportsExpDatMessageRuleConstants.VORPAPIER_TABNAME);
+		}
+	}
+}
